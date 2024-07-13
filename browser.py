@@ -1,13 +1,20 @@
 import socket
 import ssl
+import gzip
+import io
 
 class URL: 
   def __init__(self, url):
+
+    self.viewSource = False
+    if url.startswith("view-source:"):
+      self.viewSource = True
+      _, url = url.split(":", 1) 
     if "://" in url:
       self.scheme, url = url.split("://", 1)
     else:
       self.scheme, url = url.split(":", 1)
-    assert self.scheme in ["http", "https", "file", "data"]
+    assert self.scheme in ["http", "https", "file", "data", "view-source"]
     
     if self.scheme == "http":
       self.port = 80
@@ -31,7 +38,8 @@ class URL:
     print("HOST:", self.host)  
     print("PATH:", self.path)  
     print("URL:", url)  
-  def request(self):
+
+  def request(self, redCount = 0):
     if self.scheme == "file":
       with open(self.path) as file:
         content = file.read()
@@ -52,36 +60,57 @@ class URL:
 
     request = "GET {} HTTP/1.0\r\n".format(self.path)
     request += "Host: {}\r\n".format(self.host)
-    request += "Connection: close\r\n".format(self.host)
+    request += "Connection: keep-alive\r\n".format(self.host)
+    request += "Cache-Control: max-age=600\r\n".format(self.host)
+    # request += "Accept-encoding: gzip\r\n".format(self.host)
     request += "User-Agent: rodrigao2000\r\n".format(self.host)
     request += "\r\n"
     s.send(request.encode("utf8"))
 
-    response = s.makefile("r", encoding="utf8", newline="\r\n")
+    self.response = s.makefile("r", encoding="utf-8", newline="\r\n")
 
-    statusline = response.readline()
+    statusline = self.response.readline()
     version, status, explanation = statusline.split(" ", 2)
+    print(statusline)
 
     response_headers = {}
     while True:
-      line = response.readline()
+      line = self.response.readline()
       if line == "\r\n": break
       header, value = line.split(":", 1)
       response_headers[header.casefold()] = value.strip()
-      
+
+    bodySize = int(response_headers["content-length"])
+    print(status)
+    print(response_headers)
     assert "transfer-encoding" not in response_headers
     assert "content-encoding" not in response_headers
     
+    if int(status) >= 300 and int(status) < 400:
+      redCount += 1
+      redirectURL = response_headers["location"]
+      if "://" not in redirectURL:
+        redirectURL = self.scheme + "://" + self.host + redirectURL
+      if redCount> 2:
+        return "too many redirects"
+      newURL = URL(redirectURL)
+      content  = newURL.request(redCount)
+      s.close()
+      return content
 
-    content = response.read()
-    s.close()
-
-    return content
+    if int(status) >= 200 and int(status) < 300:
+      content = self.response.read(bodySize)
+      s.close()
+      return content
+    
+    return "error {}".format(status)
   
-def show(body):
+def show(body, vs):
+    if vs:
+      for c in body:
+        print(c, end="") 
+      return
     in_tag = False
-    # in_entity = False
-    # entity = []
     for c in body:
       if c == "<":
         in_tag = True
@@ -92,7 +121,7 @@ def show(body):
     
 def load(url):
     body = url.request()
-    show(body)
+    show(body, url.viewSource)
 
 if __name__ == "__main__":
   import sys

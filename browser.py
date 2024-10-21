@@ -1,5 +1,6 @@
 import socket
 import ssl
+import tkinter
 import gzip
 import io
 
@@ -104,12 +105,36 @@ class URL:
       return content
     
     return "error {}".format(status)
-  
-def show(body, vs):
+
+class Browser: 
+  def __init__(self):
+    self.width = 1440
+    self.height = 700
+    self.window = tkinter.Tk()
+    self.canvas = tkinter.Canvas(
+      self.window,
+      width= self.width,
+      height= self.height
+    )
+    self.canvas.pack()
+
+  def load(self, url):
+    body = url.request()
+    text = lex(body, url.viewSource)
+    HSTEP, VSTEP = 13, 18
+    cursor_x, cursor_y = HSTEP, VSTEP
+    for c in text:
+      self.canvas.create_text(cursor_x, cursor_y, text=c)
+      cursor_x += HSTEP
+      if cursor_x >= self.width - HSTEP:
+        cursor_y += VSTEP
+        cursor_x = HSTEP
+def lex(body, vs):
+    text = ""
     if vs:
       for c in body:
-        print(c, end="") 
-      return
+        text += c 
+      return text
     in_tag = False
     for c in body:
       if c == "<":
@@ -117,13 +142,14 @@ def show(body, vs):
       elif c == ">":
         in_tag = False
       elif not in_tag:
-        print(c, end="")
-    
-def load(url):
-    body = url.request()
-    show(body, url.viewSource)
+        text += c 
+    print(text)
+    return text
 
 if __name__ == "__main__":
   import sys
-  load(URL(sys.argv[1]))
-
+  link = "https://example.org"
+  url = URL(link)
+  br = Browser()
+  br.load(url)
+  tkinter.mainloop()
